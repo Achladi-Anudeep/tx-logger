@@ -3,11 +3,11 @@ import axios from "axios";
 import { Action, Transaction } from "./interfaces";
 import { performance } from "perf_hooks";
 import {
-  Multicall,
-  ContractCallResults,
   ContractCallContext,
+  ContractCallResults,
+  Multicall,
 } from "ethereum-multicall";
-let sym: any;
+
 const account = "0xd966A6Ea0B9930F9dB4e4c83198323739C441C40"; // Replace this with account required to get history
 //approve,transfer/burn,swaps(4-types of swaps)
 let methods = ["0x095ea7b3", "0xa9059cbb"];
@@ -310,7 +310,14 @@ const IERC = [
 
 let p1: number;
 
-const transectinsfailedAll = async (data: Transaction) => {
+let multiResult: ContractCallResults;
+
+let ContractCallContext1: ContractCallContext<{
+  extraContext: string;
+  foo4: boolean;
+}>[] = [];
+
+const transectinsfailedAll = (data: Transaction) => {
   return {
     typeName: "Failed",
     hash: data.hash.toString(),
@@ -320,59 +327,18 @@ const transectinsfailedAll = async (data: Transaction) => {
 };
 
 const transectionTransfer1 = async (data: Transaction) => {
-  const contract = new ethers.Contract(data.to, IERC, provider);
   let tokens = parseInt(data.input.slice(10 + 64, 10 + 64 + 64), 16);
-  tokens = tokens / 10 ** (await contract.decimals());
-  let tokensymbol = await contract.symbol();
-  // console.log(data, "datatattatatatat");
-  const contractCallContext: ContractCallContext<{
-    extraContext: string;
-    foo4: boolean;
-  }>[] = [
-    {
-      reference: "testContract",
-      contractAddress: data.to,
-      abi: IERC,
-      calls: [
-        {
-          reference: "decimals",
-          methodName: "decimals",
-          methodParameters: [],
-        },
-      ],
-    },
-    {
-      reference: "testContract2",
-      contractAddress: data.to,
-      abi: IERC,
-      calls: [
-        {
-          reference: "symbol",
-          methodName: "symbol",
-          methodParameters: [],
-        },
-      ],
-    },
-    {
-      reference: "testContract3",
-      contractAddress: data.to,
-      abi: IERC,
-      calls: [
-        {
-          reference: "name",
-          methodName: "name",
-          methodParameters: [],
-        },
-      ],
-    },
-  ];
+  tokens =
+    tokens /
+    10 **
+      multiResult.results["test1_" + data.hash].callsReturnContext[1]
+        .returnValues[0];
+  let tokensymbol =
+    multiResult.results[
+      "test1_" + data.hash
+    ].callsReturnContext[0].returnValues[0].toString();
 
-  multicall.call(contractCallContext).then((x) => {
-    sym = x.results.testContract2.callsReturnContext[0].returnValues.toString();
-    console.log(x.results.testContract3.callsReturnContext[0], "final");
-  });
   //console.log(data.hash,'\ntransfered',tokens,tokensymbol,'\tto=>',data.to, data.from,"\n");
-
   return {
     token: tokensymbol,
     amount: tokens,
@@ -386,11 +352,14 @@ const transactionApproved = async (data: Transaction) => {
   const spend = ethers.BigNumber.from(
     "0x" + data.input.substring(74, 74 + 64)
   ).toBigInt();
+  // console.log("spend",spend);
+
   //console.log('approved Address ' +'0x'+(ethers.utils.hexStripZeros('0x'+data.input.substring(10,74))) +
   //' to Spend '+ethers.BigNumber.from('0x'+data.input.substring(74,74+64)).toBigInt())
   const contract = new ethers.Contract(data.to, IERC, provider);
-  let tokensymbol = await contract.symbol();
-
+  let tokensymbol =
+    multiResult.results["test1_" + data.hash].callsReturnContext[0]
+      .returnValues[0]; //await contract.symbol();
   return {
     token: tokensymbol,
     amount: spend,
@@ -401,23 +370,40 @@ const transactionApproved = async (data: Transaction) => {
 
 const transactionSwap = async (data: Transaction) => {
   let text = data.input;
-  let tokeninAddress =
-    "0x" + text.slice(text.length - 64 - 64, text.length - 64).slice(24);
-  let tokenoutAddress = text.slice(text.length - 64).slice(24);
+  // let tokeninAddress =
+  //   "0x" + text.slice(text.length - 64 - 64, text.length - 64).slice(24);
+  // let tokenoutAddress = text.slice(text.length - 64).slice(24);
   let tokensin = parseInt(text.slice(10, 10 + 64), 16);
   let tokensout = parseInt(text.slice(10 + 64, 10 + 64 + 64), 16);
 
   let tin, tout;
 
-  const contract1 = new ethers.Contract(tokeninAddress, IERC, provider);
-  tokensin = tokensin / 10 ** (await contract1.decimals());
-  tin = await contract1.symbol();
+  // const contract1 = new ethers.Contract(tokeninAddress, IERC, provider);
+  tokensin =
+    tokensin /
+    10 **
+      parseInt(
+        multiResult.results["test1_" + data.hash].callsReturnContext[1]
+          .returnValues[0]
+      );
+  tin =
+    multiResult.results[
+      "test1_" + data.hash
+    ].callsReturnContext[0].returnValues[0].toString();
 
-  const contract2 = new ethers.Contract(tokenoutAddress, IERC, provider);
-  tokensout = tokensout / 10 ** (await contract2.decimals());
-  tout = await contract2.symbol();
-  //console.log(data.hash,'\nswapped\t',tokensin,tin,'\t for\t',tokensout,tout);
-
+  // const contract2 = new ethers.Contract(tokenoutAddress, IERC, provider);
+  tokensout =
+    tokensout /
+    10 **
+      parseInt(
+        multiResult.results["test2_" + data.hash].callsReturnContext[1]
+          .returnValues[0]
+      );
+  tout =
+    multiResult.results[
+      "test2_" + data.hash
+    ].callsReturnContext[0].returnValues[0].toString();
+  //console.log('\nswapped\t',tokensin,tin,'\t for\t',tokensout,tout);
   return {
     token1: tin,
     token2: tout,
@@ -428,7 +414,7 @@ const transactionSwap = async (data: Transaction) => {
   };
 };
 
-const allTransfer0x = async (data: Transaction) => {
+const allTransfer0x = (data: Transaction) => {
   return {
     typeName: "Transfer",
     hash: data.hash.toString(),
@@ -481,6 +467,114 @@ const transectionAction = async (data: Transaction) => {
   };
 };
 
+//Approved multicall
+const tApproved = async (data: Transaction) => {
+  let temp = {
+    reference: "test1_" + data.hash,
+    contractAddress: data.to,
+    abi: IERC,
+    calls: [
+      {
+        reference: "symbol",
+        methodName: "symbol",
+        methodParameters: [],
+      },
+      {
+        reference: "decimals",
+        methodName: "decimals",
+        methodParameters: [],
+      },
+    ],
+  };
+  ContractCallContext1.push(temp);
+};
+
+//transfer multicall
+const tTransfer1 = async (data: Transaction) => {
+  let temp = {
+    reference: "test1_" + data.hash,
+    contractAddress: data.to,
+    abi: IERC,
+    calls: [
+      {
+        reference: "symbol",
+        methodName: "symbol",
+        methodParameters: [],
+      },
+      {
+        reference: "decimals",
+        methodName: "decimals",
+        methodParameters: [],
+      },
+    ],
+  };
+  ContractCallContext1.push(temp);
+};
+
+//swap multicall
+const tSwap = async (data: Transaction) => {
+  let text = data.input;
+  let tokeninAddress =
+    "0x" + text.slice(text.length - 64 - 64, text.length - 64).slice(24);
+  let tokenoutAddress = text.slice(text.length - 64).slice(24);
+
+  let temp = {
+    reference: "test1_" + data.hash,
+    contractAddress: tokeninAddress,
+    abi: IERC,
+    calls: [
+      {
+        reference: "symbol",
+        methodName: "symbol",
+        methodParameters: [],
+      },
+      {
+        reference: "decimals",
+        methodName: "decimals",
+        methodParameters: [],
+      },
+    ],
+  };
+  ContractCallContext1.push(temp);
+
+  temp = {
+    reference: "test2_" + data.hash,
+    contractAddress: tokenoutAddress,
+    abi: IERC,
+    calls: [
+      {
+        reference: "symbol",
+        methodName: "symbol",
+        methodParameters: [],
+      },
+      {
+        reference: "decimals",
+        methodName: "decimals",
+        methodParameters: [],
+      },
+    ],
+  };
+  ContractCallContext1.push(temp);
+};
+
+const multiAction = async (data: Transaction) => {
+  if (data.isError !== "1") {
+    if (data.input.substring(0, 10) == methods[0]) {
+      await tApproved(data);
+      //console.log("Approve funtion");
+    } else if (data.input.substring(0, 10) == methods[1]) {
+      await tTransfer1(data);
+    } else if (
+      data.input.substring(0, 10) == swapMethods[0] ||
+      data.input.substring(0, 10) == swapMethods[1] ||
+      data.input.substring(0, 10) == swapMethods[2] ||
+      data.input.substring(0, 10) == swapMethods[3]
+    ) {
+      await tSwap(data);
+    }
+  }
+};
+
 export const getTransactions = async (account: string) => {
   let allTransactions: any = await axios.get(
     "https://api.bscscan.com/api?module=account&action=txlist&address=" +
@@ -491,9 +585,24 @@ export const getTransactions = async (account: string) => {
   let data = await allTransactions.data.result.map((i: Transaction) => {
     return i;
   });
-
   p1 = performance.now();
-  console.log(p1, "p1");
+
+  //for multicall
+  data
+    .filter(function (result: Transaction) {
+      if (
+        result.input.substring(0, 10) == "0xf305d719" ||
+        result.input.substring(0, 10) == "0xded9382a" ||
+        result.input.substring(0, 10) == "0x4a25d94a"
+      )
+        return false;
+      else return true;
+    })
+    .map((result: Transaction) => {
+      multiAction(result);
+    });
+
+  multiResult = await multicall.call(ContractCallContext1);
 
   const transferaction: Promise<Action>[] = data
     .filter(function (result: Transaction) {
@@ -508,14 +617,14 @@ export const getTransactions = async (account: string) => {
     .map((result: Transaction) => {
       return transectionAction(result);
     });
-  console.log("Before resolve " + (performance.now() - p1).toString());
+
   return transferaction;
 };
 
 // getTransactions(account).then((dataList: Promise<Action>[]) => {
 //   dataList.forEach((data: Promise<Action>) => {
 //     Promise.resolve(data).then((result: Action) => {
-//       console.log(result);
+//         console.log(result);
 //     });
 //     console.log("After Resolve " + (performance.now() - p1).toString());
 //   });
